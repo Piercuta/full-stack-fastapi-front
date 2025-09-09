@@ -28,7 +28,7 @@ class AvatarService {
 
     try {
       const response = await axios.post(
-        `${API_BASE_URL}/users/me/avatar`,
+        `${API_BASE_URL}/api/v1/users/me/avatar`,
         formData,
         {
           headers: await this.getUploadHeaders()
@@ -48,7 +48,7 @@ class AvatarService {
   async getAvatar(): Promise<string | null> {
     try {
       const response = await axios.get(
-        `${API_BASE_URL}/users/me/avatar`,
+        `${API_BASE_URL}/api/v1/users/me/avatar`,
         {
           headers: await this.getAuthHeaders()
         }
@@ -67,7 +67,7 @@ class AvatarService {
   async deleteAvatar(): Promise<void> {
     try {
       await axios.delete(
-        `${API_BASE_URL}/users/me/avatar`,
+        `${API_BASE_URL}/api/v1/users/me/avatar`,
         {
           headers: await this.getAuthHeaders()
         }
