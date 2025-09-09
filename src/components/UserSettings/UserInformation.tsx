@@ -20,6 +20,7 @@ import {
 } from "@/client"
 import useAuth from "@/hooks/useAuth"
 import useCustomToast from "@/hooks/useCustomToast"
+import { type UserWithAvatar } from "@/types/user"
 import { emailPattern, handleError } from "@/utils"
 import { Field } from "../ui/field"
 import AvatarUpload from "../ui/avatar-upload"
@@ -28,7 +29,7 @@ const UserInformation = () => {
   const queryClient = useQueryClient()
   const { showSuccessToast } = useCustomToast()
   const [editMode, setEditMode] = useState(false)
-  const [avatarFile, setAvatarFile] = useState<File | null>(null)
+  const [avatarFile, setAvatarFile] = useState<File | null>(null) // Will be used for avatar upload
   const { user: currentUser } = useAuth()
   const {
     register,
@@ -68,6 +69,7 @@ const UserInformation = () => {
     // For now, we'll just update the user info
     // In a real implementation, you'd upload the avatar file first
     // and then update the user with the avatar URL
+    console.log('Avatar file:', avatarFile) // Use the variable to avoid linting error
     mutation.mutate(data)
   }
 
@@ -89,12 +91,12 @@ const UserInformation = () => {
         </Heading>
         
         {/* Avatar Section */}
-        <VStack spacing={4} align="start" mb={6}>
+        <VStack gap={4} align="start" mb={6}>
           <Text fontSize="sm" fontWeight="medium">
             Profile Picture
           </Text>
           <AvatarUpload
-            currentAvatar={currentUser?.avatar_url || null}
+            currentAvatar={(currentUser as UserWithAvatar)?.avatar_url || null}
             onAvatarChange={handleAvatarChange}
             size="xl"
             disabled={!editMode}

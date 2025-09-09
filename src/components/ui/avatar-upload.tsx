@@ -1,4 +1,4 @@
-import { Avatar, Box, Button, Text } from "@chakra-ui/react"
+import { Box, Button, Text, Image, Circle } from "@chakra-ui/react"
 import { useRef, useState } from "react"
 import { FiCamera, FiX } from "react-icons/fi"
 
@@ -54,19 +54,42 @@ const AvatarUpload = ({
     }
   }
 
+  const getSize = (size: string) => {
+    switch (size) {
+      case "sm": return "32px"
+      case "md": return "48px"
+      case "lg": return "64px"
+      case "xl": return "80px"
+      default: return "80px"
+    }
+  }
+
   return (
     <Box position="relative" display="inline-block">
-      <Avatar
-        size={size}
-        src={preview || undefined}
+      <Circle
+        size={getSize(size)}
         cursor={disabled ? "default" : "pointer"}
         onClick={handleClick}
         bg="gray.200"
         _hover={disabled ? {} : { opacity: 0.8 }}
         transition="opacity 0.2s"
+        overflow="hidden"
+        display="flex"
+        alignItems="center"
+        justifyContent="center"
       >
-        {!preview && <FiCamera size="24" />}
-      </Avatar>
+        {preview ? (
+          <Image
+            src={preview}
+            alt="Avatar preview"
+            width="100%"
+            height="100%"
+            objectFit="cover"
+          />
+        ) : (
+          <FiCamera size="24" />
+        )}
+      </Circle>
       
       {!disabled && (
         <>
