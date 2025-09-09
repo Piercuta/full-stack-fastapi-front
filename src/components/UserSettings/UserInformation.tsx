@@ -24,6 +24,7 @@ import { type UserWithAvatar } from "@/types/user"
 import { emailPattern, handleError } from "@/utils"
 import { Field } from "../ui/field"
 import AvatarUpload from "../ui/avatar-upload"
+import avatarService from "@/services/avatarService"
 
 const UserInformation = () => {
   const queryClient = useQueryClient()
@@ -65,12 +66,25 @@ const UserInformation = () => {
   })
 
   const onSubmit: SubmitHandler<UserUpdateMe> = async (data) => {
-    // TODO: Handle avatar upload here
-    // For now, we'll just update the user info
-    // In a real implementation, you'd upload the avatar file first
-    // and then update the user with the avatar URL
-    console.log('Avatar file:', avatarFile) // Use the variable to avoid linting error
-    mutation.mutate(data)
+    try {
+      let avatarUrl = (currentUser as UserWithAvatar)?.avatar_url
+
+      // Si un nouveau fichier avatar est sélectionné, l'uploader
+      if (avatarFile) {
+        avatarUrl = await avatarService.uploadAvatar(avatarFile)
+      }
+
+      // Mettre à jour l'utilisateur avec les nouvelles données incluant l'avatar
+      const updateData = {
+        ...data,
+        avatar_url: avatarUrl
+      }
+
+      mutation.mutate(updateData)
+    } catch (error) {
+      console.error('Erreur lors de l\'upload de l\'avatar:', error)
+      // L'erreur sera gérée par le hook useAuth
+    }
   }
 
   const onCancel = () => {
