@@ -6,6 +6,7 @@ import {
   Heading,
   Input,
   Text,
+  VStack,
 } from "@chakra-ui/react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { useState } from "react"
@@ -21,11 +22,13 @@ import useAuth from "@/hooks/useAuth"
 import useCustomToast from "@/hooks/useCustomToast"
 import { emailPattern, handleError } from "@/utils"
 import { Field } from "../ui/field"
+import AvatarUpload from "../ui/avatar-upload"
 
 const UserInformation = () => {
   const queryClient = useQueryClient()
   const { showSuccessToast } = useCustomToast()
   const [editMode, setEditMode] = useState(false)
+  const [avatarFile, setAvatarFile] = useState<File | null>(null)
   const { user: currentUser } = useAuth()
   const {
     register,
@@ -61,12 +64,21 @@ const UserInformation = () => {
   })
 
   const onSubmit: SubmitHandler<UserUpdateMe> = async (data) => {
+    // TODO: Handle avatar upload here
+    // For now, we'll just update the user info
+    // In a real implementation, you'd upload the avatar file first
+    // and then update the user with the avatar URL
     mutation.mutate(data)
   }
 
   const onCancel = () => {
     reset()
+    setAvatarFile(null)
     toggleEditMode()
+  }
+
+  const handleAvatarChange = (file: File | null) => {
+    setAvatarFile(file)
   }
 
   return (
@@ -75,6 +87,20 @@ const UserInformation = () => {
         <Heading size="sm" py={4}>
           User Information
         </Heading>
+        
+        {/* Avatar Section */}
+        <VStack spacing={4} align="start" mb={6}>
+          <Text fontSize="sm" fontWeight="medium">
+            Profile Picture
+          </Text>
+          <AvatarUpload
+            currentAvatar={currentUser?.avatar_url || null}
+            onAvatarChange={handleAvatarChange}
+            size="xl"
+            disabled={!editMode}
+          />
+        </VStack>
+
         <Box
           w={{ sm: "full", md: "sm" }}
           as="form"

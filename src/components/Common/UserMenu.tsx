@@ -1,4 +1,4 @@
-import { Box, Button, Flex, Text } from "@chakra-ui/react"
+import { Avatar, Box, Button, Flex, Text } from "@chakra-ui/react"
 import { Link } from "@tanstack/react-router"
 import { FaUserAstronaut } from "react-icons/fa"
 import { FiLogOut, FiUser } from "react-icons/fi"
@@ -20,8 +20,14 @@ const UserMenu = () => {
         <MenuRoot>
           <MenuTrigger asChild p={2}>
             <Button data-testid="user-menu" variant="solid" maxW="sm" truncate>
-              <FaUserAstronaut fontSize="18" />
-              <Text>{user?.full_name || "User"}</Text>
+              <Avatar 
+                size="sm" 
+                src={user?.avatar_url || undefined}
+                bg="gray.200"
+              >
+                <FaUserAstronaut fontSize="12" />
+              </Avatar>
+              <Text ml={2}>{user?.full_name || "User"}</Text>
             </Button>
           </MenuTrigger>
 
