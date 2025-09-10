@@ -93,8 +93,25 @@ const UserInformation = () => {
     toggleEditMode()
   }
 
-  const handleAvatarChange = (file: File | null) => {
+  const handleAvatarChange = async (file: File | null) => {
     setAvatarFile(file)
+    
+    // Si l'utilisateur supprime l'avatar (file = null) et qu'il y avait un avatar existant
+    if (!file && (currentUser as UserWithAvatar)?.avatar_url) {
+      try {
+        await avatarService.deleteAvatar()
+        // Mettre à jour l'utilisateur pour supprimer l'avatar_url
+        const updateData = {
+          full_name: currentUser?.full_name,
+          email: currentUser?.email,
+          avatar_url: null
+        }
+        mutation.mutate(updateData)
+      } catch (error) {
+        console.error('Erreur lors de la suppression de l\'avatar:', error)
+        showSuccessToast("Erreur lors de la suppression de l'avatar")
+      }
+    }
   }
 
   return (
