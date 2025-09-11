@@ -31,6 +31,7 @@ const UserInformation = () => {
   const { showSuccessToast } = useCustomToast()
   const [editMode, setEditMode] = useState(false)
   const [avatarFile, setAvatarFile] = useState<File | null>(null) // Will be used for avatar upload
+  const [shouldDeleteAvatar, setShouldDeleteAvatar] = useState(false) // Track if avatar should be deleted
   const { user: currentUser } = useAuth()
   const {
     register,
@@ -69,8 +70,13 @@ const UserInformation = () => {
     try {
       let avatarUrl = (currentUser as UserWithAvatar)?.avatar_url
 
-      // Si un nouveau fichier avatar est sélectionné, l'uploader
-      if (avatarFile) {
+      // Si l'utilisateur veut supprimer l'avatar
+      if (shouldDeleteAvatar) {
+        await avatarService.deleteAvatar()
+        avatarUrl = null
+      }
+      // Sinon, si un nouveau fichier avatar est sélectionné, l'uploader
+      else if (avatarFile) {
         avatarUrl = await avatarService.uploadAvatar(avatarFile)
       }
 
@@ -82,7 +88,7 @@ const UserInformation = () => {
 
       mutation.mutate(updateData)
     } catch (error) {
-      console.error('Erreur lors de l\'upload de l\'avatar:', error)
+      console.error('Erreur lors de l\'upload/suppression de l\'avatar:', error)
       // L'erreur sera gérée par le hook useAuth
     }
   }
@@ -90,27 +96,18 @@ const UserInformation = () => {
   const onCancel = () => {
     reset()
     setAvatarFile(null)
+    setShouldDeleteAvatar(false)
     toggleEditMode()
   }
 
-  const handleAvatarChange = async (file: File | null) => {
+  const handleAvatarChange = (file: File | null) => {
     setAvatarFile(file)
     
     // Si l'utilisateur supprime l'avatar (file = null) et qu'il y avait un avatar existant
     if (!file && (currentUser as UserWithAvatar)?.avatar_url) {
-      try {
-        await avatarService.deleteAvatar()
-        // Mettre à jour l'utilisateur pour supprimer l'avatar_url
-        const updateData = {
-          full_name: currentUser?.full_name,
-          email: currentUser?.email,
-          avatar_url: null
-        }
-        mutation.mutate(updateData)
-      } catch (error) {
-        console.error('Erreur lors de la suppression de l\'avatar:', error)
-        showSuccessToast("Erreur lors de la suppression de l'avatar")
-      }
+      setShouldDeleteAvatar(true) // Marquer pour suppression au moment du Save
+    } else {
+      setShouldDeleteAvatar(false) // Pas de suppression
     }
   }
 
@@ -185,7 +182,7 @@ const UserInformation = () => {
               onClick={toggleEditMode}
               type={editMode ? "button" : "submit"}
               loading={editMode ? isSubmitting : false}
-              disabled={editMode ? !isDirty || !getValues("email") : false}
+              disabled={editMode ? (!isDirty && !avatarFile && !shouldDeleteAvatar) || !getValues("email") : false}
             >
               {editMode ? "Save" : "Edit"}
             </Button>
