@@ -12,30 +12,19 @@ permissions:
 
 env:
   TF_STATE_BUCKET: piercuta-terraform-state
-  # Remote state lives in eu-west-1 (see terraform backends)
   TF_STATE_REGION: eu-west-1
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment: ${{ github.ref_name == 'master' && 'prod' || 'dev' }}
+    environment: ${{ fromJSON('{"master":"prod","dev":"dev"}')[github.ref_name] }}
+    env:
+      VITE_API_URL: ${{ fromJSON('{"master":"https://test-k8s.prod.piercuta.com","dev":"https://test-k8s.dev.piercuta.com"}')[github.ref_name] }}
+      TF_STATE_KEY: ${{ fromJSON('{"master":"test-k8s/prod/terraform.tfstate","dev":"test-k8s/dev/terraform.tfstate"}')[github.ref_name] }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Resolve environment
-        id: env
-        run: |
-          if [ "${{ github.ref_name }}" = "master" ]; then
-            echo "name=prod" >> "$GITHUB_OUTPUT"
-            echo "tf_state_key=test-k8s/prod/terraform.tfstate" >> "$GITHUB_OUTPUT"
-            echo "vite_api_url=https://test-k8s.prod.piercuta.com" >> "$GITHUB_OUTPUT"
-          else
-            echo "name=dev" >> "$GITHUB_OUTPUT"
-            echo "tf_state_key=test-k8s/dev/terraform.tfstate" >> "$GITHUB_OUTPUT"
-            echo "vite_api_url=https://test-k8s.dev.piercuta.com" >> "$GITHUB_OUTPUT"
-          fi
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -48,8 +37,6 @@ jobs:
 
       - name: Build
         run: npm run build
-        env:
-          VITE_API_URL: ${{ steps.env.outputs.vite_api_url }}
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -62,7 +49,7 @@ jobs:
         id: tf
         run: |
           STATE_JSON=$(aws s3 cp \
-            "s3://${TF_STATE_BUCKET}/${{ steps.env.outputs.tf_state_key }}" \
+            "s3://${TF_STATE_BUCKET}/${TF_STATE_KEY}" \
             - \
             --region "${TF_STATE_REGION}")
 
