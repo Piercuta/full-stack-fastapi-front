@@ -1,0 +1,92 @@
+name: Build and deploy to S3
+
+on:
+  push:
+    branches:
+      - master
+      - dev
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  TF_STATE_BUCKET: piercuta-terraform-state
+  # Remote state lives in eu-west-1 (see terraform backends)
+  TF_STATE_REGION: eu-west-1
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref_name == 'master' && 'prod' || 'dev' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve environment
+        id: env
+        run: |
+          if [ "${{ github.ref_name }}" = "master" ]; then
+            echo "name=prod" >> "$GITHUB_OUTPUT"
+            echo "tf_state_key=test-k8s/prod/terraform.tfstate" >> "$GITHUB_OUTPUT"
+            echo "vite_api_url=https://test-k8s.prod.piercuta.com" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=dev" >> "$GITHUB_OUTPUT"
+            echo "tf_state_key=test-k8s/dev/terraform.tfstate" >> "$GITHUB_OUTPUT"
+            echo "vite_api_url=https://test-k8s.dev.piercuta.com" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: ".nvmrc"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+        env:
+          VITE_API_URL: ${{ steps.env.outputs.vite_api_url }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Read Terraform outputs
+        id: tf
+        run: |
+          STATE_JSON=$(aws s3 cp \
+            "s3://${TF_STATE_BUCKET}/${{ steps.env.outputs.tf_state_key }}" \
+            - \
+            --region "${TF_STATE_REGION}")
+
+          BUCKET=$(echo "$STATE_JSON" | jq -r '.outputs.site_bucket_name.value')
+          DISTRIBUTION_ID=$(echo "$STATE_JSON" | jq -r '.outputs.cloudfront_distribution_id.value')
+
+          if [ -z "$BUCKET" ] || [ "$BUCKET" = "null" ]; then
+            echo "Missing output: site_bucket_name" >&2
+            exit 1
+          fi
+          if [ -z "$DISTRIBUTION_ID" ] || [ "$DISTRIBUTION_ID" = "null" ]; then
+            echo "Missing output: cloudfront_distribution_id" >&2
+            exit 1
+          fi
+
+          echo "bucket=${BUCKET}" >> "$GITHUB_OUTPUT"
+          echo "distribution_id=${DISTRIBUTION_ID}" >> "$GITHUB_OUTPUT"
+          echo "Deploy target: s3://${BUCKET} / CloudFront ${DISTRIBUTION_ID}"
+
+      - name: Sync to S3
+        run: aws s3 sync dist/ "s3://${{ steps.tf.outputs.bucket }}" --delete
+
+      - name: Invalidate CloudFront
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id "${{ steps.tf.outputs.distribution_id }}" \
+            --paths "/*"
