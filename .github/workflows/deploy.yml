@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: ${{ fromJSON('{"master":"prod","dev":"dev"}')[github.ref_name] }}
     env:
-      VITE_API_URL: ${{ fromJSON('{"master":"https://test-k8s.prod.piercuta.com","dev":"https://test-k8s.dev.piercuta.com"}')[github.ref_name] }}
+      VITE_API_URL: ${{ fromJSON('{"master":"https://api-test-k8s.prod.piercuta.com","dev":"https://api-test-k8s.dev.piercuta.com"}')[github.ref_name] }}
       TF_STATE_KEY: ${{ fromJSON('{"master":"test-k8s/prod/terraform.tfstate","dev":"test-k8s/dev/terraform.tfstate"}')[github.ref_name] }}
 
     steps:
