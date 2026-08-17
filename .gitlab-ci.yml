@@ -1,5 +1,6 @@
 # Build the Vite site, pass dist/ as an artifact, then sync to S3 and
-# invalidate CloudFront.
+# invalidate CloudFront. Infra values come from SSM Parameter Store:
+#   /<project>/<env>/<key>  e.g. /test-k8s/dev/site_bucket_name
 #
 #   push `dev`              → build + deploy automatically (environment `dev`)
 #   push `master` / `main`  → build + deploy (manual play button, environment `prod`)
@@ -10,55 +11,55 @@
 #   AWS_SECRET_ACCESS_KEY  (masked)
 #   AWS_REGION             optional, defaults to eu-west-1
 #
-# The IAM principal must be able to: read Terraform state, write the site
-# bucket, and create CloudFront invalidations.
+# IAM: ssm:GetParameter on /test-k8s/* , plus S3 sync and CloudFront invalidation.
 
 workflow:
   rules:
     - if: $CI_COMMIT_BRANCH == "dev"
-    - if: $CI_COMMIT_BRANCH == "master"
-    - if: $CI_COMMIT_BRANCH == "main"
+      variables:
+        DEPLOY_ENV: dev
+        SSM_PREFIX: /test-k8s/dev
+    - if: $CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "main"
+      variables:
+        DEPLOY_ENV: prod
+        SSM_PREFIX: /test-k8s/prod
     - if: $CI_COMMIT_TAG
+      variables:
+        DEPLOY_ENV: prod
+        SSM_PREFIX: /test-k8s/prod
 
 stages:
   - build
   - deploy
 
 variables:
-  TF_STATE_BUCKET: piercuta-terraform-state
-  TF_STATE_REGION: eu-west-1
+  PROJECT_NAME: test-k8s
   AWS_DEFAULT_REGION: $AWS_REGION
   AWS_REGION: eu-west-1
   npm_config_cache: "$CI_PROJECT_DIR/.npm"
 
-.dev_vars: &dev_vars
-  VITE_API_URL: "https://api-test-k8s.dev.piercuta.com"
-  TF_STATE_KEY: "test-k8s/dev/terraform.tfstate"
-  DEPLOY_ENV: dev
-
-.prod_vars: &prod_vars
-  VITE_API_URL: "https://api-test-k8s.prod.piercuta.com"
-  TF_STATE_KEY: "test-k8s/prod/terraform.tfstate"
-  DEPLOY_ENV: prod
-
 build:
   stage: build
   image: node:20-bookworm
-  rules:
-    - if: $CI_COMMIT_BRANCH == "dev"
-      variables:
-        <<: *dev_vars
-    - if: $CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "main"
-      variables:
-        <<: *prod_vars
-    - if: $CI_COMMIT_TAG
-      variables:
-        <<: *prod_vars
   cache:
     key: "${CI_COMMIT_REF_SLUG}-npm"
     paths:
       - .npm/
+  before_script:
+    - apt-get update && apt-get install -y --no-install-recommends awscli
   script:
+    - |
+      ssm_get() {
+        val=$(aws ssm get-parameter --name "${SSM_PREFIX}/$1" --query Parameter.Value --output text)
+        if [ -z "$val" ] || [ "$val" = "None" ]; then
+          echo "Missing SSM parameter: ${SSM_PREFIX}/$1" >&2
+          exit 1
+        fi
+        printf '%s' "$val"
+      }
+      export VITE_API_URL
+      VITE_API_URL=$(ssm_get api_url)
+      echo "VITE_API_URL=${VITE_API_URL}"
     - npm ci
     - npm run build
   artifacts:
@@ -75,41 +76,25 @@ deploy:
       artifacts: true
   rules:
     - if: $CI_COMMIT_BRANCH == "dev"
-      variables:
-        <<: *dev_vars
-    - if: $CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "main"
-      when: manual
-      variables:
-        <<: *prod_vars
-    - if: $CI_COMMIT_TAG
-      when: manual
-      variables:
-        <<: *prod_vars
+    - when: manual
   environment:
     name: $DEPLOY_ENV
   resource_group: deploy-s3-$DEPLOY_ENV
   before_script:
-    - apk add --no-cache aws-cli jq
+    - apk add --no-cache aws-cli
   script:
     - test -d dist
     - |
-      STATE_JSON=$(aws s3 cp \
-        "s3://${TF_STATE_BUCKET}/${TF_STATE_KEY}" \
-        - \
-        --region "${TF_STATE_REGION}")
-
-      BUCKET=$(echo "$STATE_JSON" | jq -r '.outputs.site_bucket_name.value')
-      DISTRIBUTION_ID=$(echo "$STATE_JSON" | jq -r '.outputs.cloudfront_distribution_id.value')
-
-      if [ -z "$BUCKET" ] || [ "$BUCKET" = "null" ]; then
-        echo "Missing Terraform output: site_bucket_name" >&2
-        exit 1
-      fi
-      if [ -z "$DISTRIBUTION_ID" ] || [ "$DISTRIBUTION_ID" = "null" ]; then
-        echo "Missing Terraform output: cloudfront_distribution_id" >&2
-        exit 1
-      fi
-
+      ssm_get() {
+        val=$(aws ssm get-parameter --name "${SSM_PREFIX}/$1" --query Parameter.Value --output text)
+        if [ -z "$val" ] || [ "$val" = "None" ]; then
+          echo "Missing SSM parameter: ${SSM_PREFIX}/$1" >&2
+          exit 1
+        fi
+        printf '%s' "$val"
+      }
+      BUCKET=$(ssm_get site_bucket_name)
+      DISTRIBUTION_ID=$(ssm_get cloudfront_distribution_id)
       echo "Deploy target: s3://${BUCKET} / CloudFront ${DISTRIBUTION_ID}"
       aws s3 sync dist/ "s3://${BUCKET}" --delete
       aws cloudfront create-invalidation \
