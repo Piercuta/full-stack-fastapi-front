@@ -1,30 +1,73 @@
+# Build the Vite site, pass dist/ as an artifact, then sync to S3 and
+# invalidate CloudFront. Infra values come from SSM Parameter Store:
+#   /<project>/<env>/<key>  e.g. /test-k8s/dev/site_bucket_name
+#
+#   push `dev`              → build + deploy automatically (environment `dev`)
+#   push `master` / `main`  → build only
+#   Run workflow on `master` / `main` / tag → build + deploy (manual prod release)
+#
+# Secrets:
+#   AWS_ACCESS_KEY_ID
+#   AWS_SECRET_ACCESS_KEY
+#
+# Vars (optional):
+#   AWS_REGION               defaults to eu-west-1
+#
+# IAM: ssm:GetParameter on /test-k8s/* , plus S3 sync and CloudFront invalidation.
+
 name: Build and deploy to S3
 
 on:
   push:
     branches:
       - master
+      - main
       - dev
+    tags:
+      - "*"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 env:
-  TF_STATE_BUCKET: piercuta-terraform-state
-  TF_STATE_REGION: eu-west-1
+  PROJECT_NAME: test-k8s
+  DEPLOY_ENV: ${{ github.ref_name == 'dev' && 'dev' || 'prod' }}
+  SSM_PREFIX: ${{ github.ref_name == 'dev' && '/test-k8s/dev' || '/test-k8s/prod' }}
 
 jobs:
-  deploy:
+  build:
+    name: Build
     runs-on: ubuntu-latest
-    environment: ${{ fromJSON('{"master":"prod","dev":"dev"}')[github.ref_name] }}
-    env:
-      VITE_API_URL: ${{ fromJSON('{"master":"https://api-test-k8s.prod.piercuta.com","dev":"https://api-test-k8s.dev.piercuta.com"}')[github.ref_name] }}
-      TF_STATE_KEY: ${{ fromJSON('{"master":"test-k8s/prod/terraform.tfstate","dev":"test-k8s/dev/terraform.tfstate"}')[github.ref_name] }}
-
+    environment: ${{ github.ref_name == 'dev' && 'dev' || 'prod' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
+
+      - name: Read SSM api_url
+        run: |
+          ssm_get() {
+            val=$(aws ssm get-parameter --name "${SSM_PREFIX}/$1" --query Parameter.Value --output text)
+            if [ -z "$val" ] || [ "$val" = "None" ]; then
+              echo "Missing SSM parameter: ${SSM_PREFIX}/$1" >&2
+              exit 1
+            fi
+            printf '%s' "$val"
+          }
+          VITE_API_URL=$(ssm_get api_url)
+          case "$VITE_API_URL" in
+            http://*|https://*) ;;
+            *) VITE_API_URL="https://${VITE_API_URL}" ;;
+          esac
+          echo "VITE_API_URL=${VITE_API_URL}" >> "$GITHUB_ENV"
+          echo "VITE_API_URL=${VITE_API_URL}"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -38,42 +81,51 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Upload site artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: site
+          path: dist/
+          retention-days: 1
+
+  deploy:
+    name: Deploy
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref_name == 'dev' || github.event_name == 'workflow_dispatch'
+    environment: ${{ github.ref_name == 'dev' && 'dev' || 'prod' }}
+    concurrency:
+      group: deploy-s3-${{ github.ref_name == 'dev' && 'dev' || 'prod' }}
+      cancel-in-progress: false
+    steps:
+      - name: Download site artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: site
+          path: dist
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ vars.AWS_REGION }}
+          aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
 
-      - name: Read Terraform outputs
-        id: tf
+      - name: Sync to S3 and invalidate CloudFront
         run: |
-          STATE_JSON=$(aws s3 cp \
-            "s3://${TF_STATE_BUCKET}/${TF_STATE_KEY}" \
-            - \
-            --region "${TF_STATE_REGION}")
-
-          BUCKET=$(echo "$STATE_JSON" | jq -r '.outputs.site_bucket_name.value')
-          DISTRIBUTION_ID=$(echo "$STATE_JSON" | jq -r '.outputs.cloudfront_distribution_id.value')
-
-          if [ -z "$BUCKET" ] || [ "$BUCKET" = "null" ]; then
-            echo "Missing output: site_bucket_name" >&2
-            exit 1
-          fi
-          if [ -z "$DISTRIBUTION_ID" ] || [ "$DISTRIBUTION_ID" = "null" ]; then
-            echo "Missing output: cloudfront_distribution_id" >&2
-            exit 1
-          fi
-
-          echo "bucket=${BUCKET}" >> "$GITHUB_OUTPUT"
-          echo "distribution_id=${DISTRIBUTION_ID}" >> "$GITHUB_OUTPUT"
+          test -d dist
+          ssm_get() {
+            val=$(aws ssm get-parameter --name "${SSM_PREFIX}/$1" --query Parameter.Value --output text)
+            if [ -z "$val" ] || [ "$val" = "None" ]; then
+              echo "Missing SSM parameter: ${SSM_PREFIX}/$1" >&2
+              exit 1
+            fi
+            printf '%s' "$val"
+          }
+          BUCKET=$(ssm_get site_bucket_name)
+          DISTRIBUTION_ID=$(ssm_get cloudfront_distribution_id)
           echo "Deploy target: s3://${BUCKET} / CloudFront ${DISTRIBUTION_ID}"
-
-      - name: Sync to S3
-        run: aws s3 sync dist/ "s3://${{ steps.tf.outputs.bucket }}" --delete
-
-      - name: Invalidate CloudFront
-        run: |
+          aws s3 sync dist/ "s3://${BUCKET}" --delete
           aws cloudfront create-invalidation \
-            --distribution-id "${{ steps.tf.outputs.distribution_id }}" \
+            --distribution-id "${DISTRIBUTION_ID}" \
             --paths "/*"
