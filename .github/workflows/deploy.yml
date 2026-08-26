@@ -2,15 +2,13 @@
 # invalidate CloudFront. Infra values come from SSM Parameter Store:
 #   /<project>/<env>/<key>  e.g. /test-k8s/dev/site_bucket_name
 #
-#   push `dev`              → build + deploy automatically (environment `dev`)
-#   push `master` / `main`  → build only
-#   Run workflow on `master` / `main` / tag → build + deploy (manual prod release)
+# Triggers (aligned with backend CI):
+#   push `dev`         → build + deploy (environment `dev`)
+#   push tag on `prod` → build + deploy (environment `prod`)
+#   workflow_dispatch  → build + deploy (env from ref: `dev` → dev, else prod)
 #
-# Secrets:
-#   AWS_ACCESS_KEY_ID
-#   AWS_SECRET_ACCESS_KEY
-#
-# Vars (optional):
+# Vars:
+#   AWS_ROLE_ARN
 #   AWS_REGION               defaults to eu-west-1
 #
 # IAM: ssm:GetParameter on /test-k8s/* , plus S3 sync and CloudFront invalidation.
@@ -20,8 +18,6 @@ name: Build and deploy to S3
 on:
   push:
     branches:
-      - master
-      - main
       - dev
     tags:
       - "*"
@@ -40,16 +36,30 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
-    environment: ${{ github.ref_name == 'dev' && 'dev' || 'prod' }}
+    environment: ${{ github.ref_type == 'tag' && 'prod' || github.ref_name }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Ensure tag is on prod branch
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          set -euo pipefail
+          git fetch origin prod:refs/remotes/origin/prod
+          if ! git merge-base --is-ancestor "${GITHUB_SHA}" origin/prod; then
+            echo "Refusing prod deploy: tag ${GITHUB_REF_NAME} (${GITHUB_SHA}) is not on branch prod." >&2
+            echo "Create the tag from prod, e.g.: git checkout prod && git tag v1.2.3 && git push origin v1.2.3" >&2
+            exit 1
+          fi
+          echo "Tag ${GITHUB_REF_NAME} is on origin/prod — OK for prod deploy."
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION }}
+          aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
 
       - name: Read SSM api_url
         run: |
@@ -92,10 +102,13 @@ jobs:
     name: Deploy
     needs: build
     runs-on: ubuntu-latest
-    if: github.ref_name == 'dev' || github.event_name == 'workflow_dispatch'
-    environment: ${{ github.ref_name == 'dev' && 'dev' || 'prod' }}
+    if: >
+      github.ref_name == 'dev' ||
+      startsWith(github.ref, 'refs/tags/') ||
+      github.event_name == 'workflow_dispatch'
+    environment: ${{ github.ref_type == 'tag' && 'prod' || github.ref_name }}
     concurrency:
-      group: deploy-s3-${{ github.ref_name == 'dev' && 'dev' || 'prod' }}
+      group: deploy-s3-${{ github.ref_type == 'tag' && 'prod' || github.ref_name }}
       cancel-in-progress: false
     steps:
       - name: Download site artifact
@@ -108,7 +121,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION }}
+          aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
 
       - name: Sync to S3 and invalidate CloudFront
         run: |
