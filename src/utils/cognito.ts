@@ -1,0 +1,132 @@
+/** Cognito Hosted UI helpers (authorization code + PKCE → app JWT via API). */
+
+const VERIFIER_KEY = "cognito_code_verifier"
+
+function base64UrlEncode(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer)
+  let binary = ""
+  bytes.forEach((b) => {
+    binary += String.fromCharCode(b)
+  })
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
+}
+
+function randomVerifier(length = 64): string {
+  const charset =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
+  const values = crypto.getRandomValues(new Uint8Array(length))
+  return Array.from(values, (v) => charset[v % charset.length]).join("")
+}
+
+async function sha256(plain: string): Promise<ArrayBuffer> {
+  const data = new TextEncoder().encode(plain)
+  return crypto.subtle.digest("SHA-256", data)
+}
+
+export function isCognitoConfigured(): boolean {
+  return Boolean(
+    import.meta.env.VITE_COGNITO_CLIENT_ID &&
+      import.meta.env.VITE_COGNITO_DOMAIN,
+  )
+}
+
+export function getCognitoHostedUiBase(): string {
+  const domain = (import.meta.env.VITE_COGNITO_DOMAIN || "").replace(/\/$/, "")
+  if (domain.startsWith("http://") || domain.startsWith("https://")) {
+    return domain
+  }
+  const region = import.meta.env.VITE_AWS_REGION || "eu-west-1"
+  return `https://${domain}.auth.${region}.amazoncognito.com`
+}
+
+export function getCognitoRedirectUri(): string {
+  // Must match Cognito app client callback URL exactly (no trailing slash).
+  return window.location.origin
+}
+
+export async function startCognitoLogin(identityProvider = "Google"): Promise<void> {
+  const clientId = import.meta.env.VITE_COGNITO_CLIENT_ID
+  if (!clientId || !import.meta.env.VITE_COGNITO_DOMAIN) {
+    throw new Error("Cognito is not configured")
+  }
+  const verifier = randomVerifier()
+  sessionStorage.setItem(VERIFIER_KEY, verifier)
+  const challenge = base64UrlEncode(await sha256(verifier))
+  const params = new URLSearchParams({
+    client_id: clientId,
+    response_type: "code",
+    scope: "openid email profile",
+    redirect_uri: getCognitoRedirectUri(),
+    code_challenge_method: "S256",
+    code_challenge: challenge,
+    identity_provider: identityProvider,
+  })
+  window.location.href = `${getCognitoHostedUiBase()}/oauth2/authorize?${params}`
+}
+
+export function takeCognitoCodeFromUrl(): {
+  code: string | null
+  error: string | null
+} {
+  const params = new URLSearchParams(window.location.search)
+  return {
+    code: params.get("code"),
+    error: params.get("error_description") || params.get("error"),
+  }
+}
+
+export function clearCognitoCallbackUrl(): void {
+  const url = new URL(window.location.href)
+  url.searchParams.delete("code")
+  url.searchParams.delete("state")
+  url.searchParams.delete("error")
+  url.searchParams.delete("error_description")
+  window.history.replaceState({}, document.title, url.pathname + url.search + url.hash)
+}
+
+export function peekCodeVerifier(): string | null {
+  return sessionStorage.getItem(VERIFIER_KEY)
+}
+
+export function clearCodeVerifier(): void {
+  sessionStorage.removeItem(VERIFIER_KEY)
+}
+
+const exchangeInFlight = new Map<string, Promise<string>>()
+
+export async function exchangeCognitoCode(code: string): Promise<string> {
+  const existing = exchangeInFlight.get(code)
+  if (existing) return existing
+
+  const promise = (async () => {
+    const codeVerifier = peekCodeVerifier()
+    const base = (import.meta.env.VITE_API_URL || "").replace(/\/$/, "")
+    const response = await fetch(`${base}/api/v1/login/cognito`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        code,
+        redirect_uri: getCognitoRedirectUri(),
+        code_verifier: codeVerifier,
+      }),
+    })
+    if (!response.ok) {
+      let detail: string | unknown = "Cognito login failed"
+      try {
+        const data = await response.json()
+        detail = data.detail || detail
+      } catch {
+        // ignore
+      }
+      throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail))
+    }
+    clearCodeVerifier()
+    const data = (await response.json()) as { access_token: string }
+    return data.access_token
+  })().finally(() => {
+    exchangeInFlight.delete(code)
+  })
+
+  exchangeInFlight.set(code, promise)
+  return promise
+}

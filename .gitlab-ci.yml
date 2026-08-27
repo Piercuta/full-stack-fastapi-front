@@ -59,7 +59,26 @@ build:
       }
       export VITE_API_URL
       VITE_API_URL=$(ssm_get api_url)
+      case "$VITE_API_URL" in
+        http://*|https://*) ;;
+        *) VITE_API_URL="https://${VITE_API_URL}" ;;
+      esac
       echo "VITE_API_URL=${VITE_API_URL}"
+
+      COGNITO_CLIENT_ID=$(aws ssm get-parameter --name "${SSM_PREFIX}/cognito_client_id" --query Parameter.Value --output text 2>/dev/null || true)
+      COGNITO_DOMAIN=$(aws ssm get-parameter --name "${SSM_PREFIX}/cognito_domain" --query Parameter.Value --output text 2>/dev/null || true)
+      if [ -n "${COGNITO_CLIENT_ID}" ] && [ "${COGNITO_CLIENT_ID}" != "None" ]; then
+        export VITE_COGNITO_CLIENT_ID="${COGNITO_CLIENT_ID}"
+      fi
+      if [ -n "${COGNITO_DOMAIN}" ] && [ "${COGNITO_DOMAIN}" != "None" ]; then
+        case "$COGNITO_DOMAIN" in
+          http://*|https://*) ;;
+          *)
+            COGNITO_DOMAIN="https://${COGNITO_DOMAIN}.auth.${AWS_REGION:-eu-west-1}.amazoncognito.com"
+            ;;
+        esac
+        export VITE_COGNITO_DOMAIN="${COGNITO_DOMAIN}"
+      fi
     - npm ci
     - npm run build
   artifacts:

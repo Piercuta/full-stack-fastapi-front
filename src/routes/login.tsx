@@ -13,6 +13,7 @@ import { Field } from "@/components/ui/field"
 import { InputGroup } from "@/components/ui/input-group"
 import { PasswordInput } from "@/components/ui/password-input"
 import useAuth, { isLoggedIn } from "@/hooks/useAuth"
+import { isCognitoConfigured, startCognitoLogin } from "@/utils/cognito"
 import Logo from "/assets/images/fastapi-logo.svg"
 import { emailPattern, passwordRules } from "../utils"
 
@@ -29,6 +30,7 @@ export const Route = createFileRoute("/login")({
 
 function Login() {
   const { loginMutation, error, resetError } = useAuth()
+  const cognitoEnabled = isCognitoConfigured()
   const {
     register,
     handleSubmit,
@@ -51,6 +53,14 @@ function Login() {
       await loginMutation.mutateAsync(data)
     } catch {
       // error is handled by useAuth hook
+    }
+  }
+
+  const onGoogleLogin = async () => {
+    try {
+      await startCognitoLogin("Google")
+    } catch (err) {
+      console.error(err)
     }
   }
 
@@ -103,6 +113,21 @@ function Login() {
         <Button variant="solid" type="submit" loading={isSubmitting} size="md">
           Log In
         </Button>
+        {cognitoEnabled ? (
+          <>
+            <Text textAlign="center" color="fg.muted" fontSize="sm">
+              or
+            </Text>
+            <Button
+              type="button"
+              variant="outline"
+              size="md"
+              onClick={onGoogleLogin}
+            >
+              Continue with Google
+            </Button>
+          </>
+        ) : null}
         <Text>
           Don't have an account?{" "}
           <RouterLink to="/signup" className="main-link">

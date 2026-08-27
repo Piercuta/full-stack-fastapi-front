@@ -1,6 +1,7 @@
 import { Outlet, createRootRoute } from "@tanstack/react-router"
 import React, { Suspense } from "react"
 
+import CognitoCallbackHandler from "@/components/Common/CognitoCallbackHandler"
 import NotFound from "@/components/Common/NotFound"
 
 const loadDevtools = () =>
@@ -24,6 +25,7 @@ const TanStackDevtools =
 export const Route = createRootRoute({
   component: () => (
     <>
+      <CognitoCallbackHandler />
       <Outlet />
       <Suspense>
         <TanStackDevtools />
