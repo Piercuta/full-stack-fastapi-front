@@ -4,6 +4,7 @@ import {
   createFileRoute,
   redirect,
 } from "@tanstack/react-router"
+import { useEffect, useState } from "react"
 import { type SubmitHandler, useForm } from "react-hook-form"
 import { FiLock, FiMail } from "react-icons/fi"
 
@@ -13,7 +14,11 @@ import { Field } from "@/components/ui/field"
 import { InputGroup } from "@/components/ui/input-group"
 import { PasswordInput } from "@/components/ui/password-input"
 import useAuth, { isLoggedIn } from "@/hooks/useAuth"
-import { isCognitoConfigured, startCognitoLogin } from "@/utils/cognito"
+import {
+  consumeCognitoLoginError,
+  isCognitoConfigured,
+  startCognitoLogin,
+} from "@/utils/cognito"
 import Logo from "/assets/images/fastapi-logo.svg"
 import { emailPattern, passwordRules } from "../utils"
 
@@ -31,6 +36,7 @@ export const Route = createFileRoute("/login")({
 function Login() {
   const { loginMutation, error, resetError } = useAuth()
   const cognitoEnabled = isCognitoConfigured()
+  const [cognitoError, setCognitoError] = useState<string | null>(null)
   const {
     register,
     handleSubmit,
@@ -43,6 +49,10 @@ function Login() {
       password: "",
     },
   })
+
+  useEffect(() => {
+    setCognitoError(consumeCognitoLoginError())
+  }, [])
 
   const onSubmit: SubmitHandler<AccessToken> = async (data) => {
     if (isSubmitting) return
@@ -84,6 +94,11 @@ function Login() {
           alignSelf="center"
           mb={4}
         />
+        {cognitoError ? (
+          <Text color="red.500" fontSize="sm" textAlign="center">
+            {cognitoError}
+          </Text>
+        ) : null}
         <Field
           invalid={!!errors.username}
           errorText={errors.username?.message || !!error}

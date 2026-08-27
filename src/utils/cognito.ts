@@ -1,6 +1,7 @@
 /** Cognito Hosted UI helpers (authorization code + PKCE → app JWT via API). */
 
 const VERIFIER_KEY = "cognito_code_verifier"
+const ERROR_KEY = "cognito_login_error"
 
 function base64UrlEncode(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer)
@@ -64,11 +65,13 @@ export async function startCognitoLogin(identityProvider = "Google"): Promise<vo
   window.location.href = `${getCognitoHostedUiBase()}/oauth2/authorize?${params}`
 }
 
-export function takeCognitoCodeFromUrl(): {
+export function takeCognitoCodeFromUrl(search?: string): {
   code: string | null
   error: string | null
 } {
-  const params = new URLSearchParams(window.location.search)
+  const params = new URLSearchParams(
+    search ?? (typeof window !== "undefined" ? window.location.search : ""),
+  )
   return {
     code: params.get("code"),
     error: params.get("error_description") || params.get("error"),
@@ -90,6 +93,12 @@ export function peekCodeVerifier(): string | null {
 
 export function clearCodeVerifier(): void {
   sessionStorage.removeItem(VERIFIER_KEY)
+}
+
+export function consumeCognitoLoginError(): string | null {
+  const error = sessionStorage.getItem(ERROR_KEY)
+  if (error) sessionStorage.removeItem(ERROR_KEY)
+  return error
 }
 
 const exchangeInFlight = new Map<string, Promise<string>>()
@@ -129,4 +138,32 @@ export async function exchangeCognitoCode(code: string): Promise<string> {
 
   exchangeInFlight.set(code, promise)
   return promise
+}
+
+/**
+ * Run during root beforeLoad so /_layout auth redirect cannot drop ?code=.
+ */
+export async function completeCognitoLoginFromSearch(
+  search: string,
+): Promise<"ok" | "none" | "error"> {
+  const { code, error } = takeCognitoCodeFromUrl(search)
+  if (error) {
+    sessionStorage.setItem(ERROR_KEY, error)
+    clearCognitoCallbackUrl()
+    return "error"
+  }
+  if (!code) return "none"
+  try {
+    const accessToken = await exchangeCognitoCode(code)
+    localStorage.setItem("access_token", accessToken)
+    clearCognitoCallbackUrl()
+    return "ok"
+  } catch (err) {
+    sessionStorage.setItem(
+      ERROR_KEY,
+      err instanceof Error ? err.message : "Cognito login failed",
+    )
+    clearCognitoCallbackUrl()
+    return "error"
+  }
 }
