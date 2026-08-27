@@ -142,6 +142,7 @@ export async function exchangeCognitoCode(code: string): Promise<string> {
 
 /**
  * Run during root beforeLoad so /_layout auth redirect cannot drop ?code=.
+ * Idempotent: a code is exchanged at most once (avoids invalid_grant on remount).
  */
 export async function completeCognitoLoginFromSearch(
   search: string,
@@ -153,12 +154,26 @@ export async function completeCognitoLoginFromSearch(
     return "error"
   }
   if (!code) return "none"
+
+  const handledKey = `cognito_code_handled_${code}`
+  if (sessionStorage.getItem(handledKey)) {
+    clearCognitoCallbackUrl()
+    return localStorage.getItem("access_token") ? "ok" : "error"
+  }
+  // Mark before await to prevent a parallel beforeLoad from exchanging twice.
+  sessionStorage.setItem(handledKey, "1")
+
   try {
     const accessToken = await exchangeCognitoCode(code)
     localStorage.setItem("access_token", accessToken)
     clearCognitoCallbackUrl()
     return "ok"
   } catch (err) {
+    if (localStorage.getItem("access_token")) {
+      clearCognitoCallbackUrl()
+      return "ok"
+    }
+    sessionStorage.removeItem(handledKey)
     sessionStorage.setItem(
       ERROR_KEY,
       err instanceof Error ? err.message : "Cognito login failed",
