@@ -74,6 +74,14 @@ function Login() {
     }
   }
 
+  const onCognitoLogin = async () => {
+    try {
+      await startCognitoLogin()
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
   return (
     <>
       <Container
@@ -133,6 +141,14 @@ function Login() {
             <Text textAlign="center" color="fg.muted" fontSize="sm">
               or
             </Text>
+            <Button
+              type="button"
+              variant="outline"
+              size="md"
+              onClick={onCognitoLogin}
+            >
+              Continue with Cognito
+            </Button>
             <Button
               type="button"
               variant="outline"

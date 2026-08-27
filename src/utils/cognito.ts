@@ -45,7 +45,9 @@ export function getCognitoRedirectUri(): string {
   return window.location.origin
 }
 
-export async function startCognitoLogin(identityProvider = "Google"): Promise<void> {
+export async function startCognitoLogin(
+  identityProvider?: string,
+): Promise<void> {
   const clientId = import.meta.env.VITE_COGNITO_CLIENT_ID
   if (!clientId || !import.meta.env.VITE_COGNITO_DOMAIN) {
     throw new Error("Cognito is not configured")
@@ -60,8 +62,11 @@ export async function startCognitoLogin(identityProvider = "Google"): Promise<vo
     redirect_uri: getCognitoRedirectUri(),
     code_challenge_method: "S256",
     code_challenge: challenge,
-    identity_provider: identityProvider,
   })
+  // Omit identity_provider to show Cognito Hosted UI (email/password + social).
+  if (identityProvider) {
+    params.set("identity_provider", identityProvider)
+  }
   window.location.href = `${getCognitoHostedUiBase()}/oauth2/authorize?${params}`
 }
 
