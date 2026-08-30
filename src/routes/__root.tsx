@@ -34,7 +34,11 @@ export const Route = createRootRoute({
           : ""
     const result = await completeCognitoLoginFromSearch(search)
     if (result === "ok") {
-      throw redirect({ to: "/" })
+      // Hard navigation: callback lands on "/" already, so soft redirect({ to: "/" })
+      // is a no-op and leaves a blank page until refresh. Full reload remounts the app
+      // with the access_token already in localStorage.
+      window.location.replace("/")
+      return
     }
     if (result === "error") {
       throw redirect({ to: "/login" })
