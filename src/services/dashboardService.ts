@@ -15,17 +15,51 @@ export type DashboardStats = {
   series: DashboardSeriesPoint[]
 }
 
-export async function fetchDashboardStats(): Promise<DashboardStats> {
-  const base = (OpenAPI.BASE || "").replace(/\/$/, "")
-  const token = localStorage.getItem("access_token") || ""
+export type DashboardCacheInfo = {
+  enabled: boolean
+  redis_reachable: boolean
+  key: string
+  ttl_seconds: number | null
+  configured_ttl_seconds: number
+  payload: DashboardStats | null
+}
 
-  const response = await fetch(`${base}/api/v1/dashboard/stats`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
+function authHeaders(): HeadersInit {
+  const token = localStorage.getItem("access_token") || ""
+  return { Authorization: `Bearer ${token}` }
+}
+
+function apiBase(): string {
+  return (OpenAPI.BASE || "").replace(/\/$/, "")
+}
+
+export async function fetchDashboardStats(): Promise<DashboardStats> {
+  const response = await fetch(`${apiBase()}/api/v1/dashboard/stats`, {
+    headers: authHeaders(),
   })
   if (!response.ok) {
     throw new Error(`Dashboard stats failed (${response.status})`)
+  }
+  return response.json()
+}
+
+export async function fetchDashboardCache(): Promise<DashboardCacheInfo> {
+  const response = await fetch(`${apiBase()}/api/v1/dashboard/cache`, {
+    headers: authHeaders(),
+  })
+  if (!response.ok) {
+    throw new Error(`Dashboard cache failed (${response.status})`)
+  }
+  return response.json()
+}
+
+export async function invalidateDashboardCache(): Promise<{ message: string }> {
+  const response = await fetch(`${apiBase()}/api/v1/dashboard/cache`, {
+    method: "DELETE",
+    headers: authHeaders(),
+  })
+  if (!response.ok) {
+    throw new Error(`Invalidate cache failed (${response.status})`)
   }
   return response.json()
 }
