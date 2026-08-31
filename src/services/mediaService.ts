@@ -1,4 +1,4 @@
-import { OpenAPI } from "@/client"
+import { apiBaseUrl } from "@/utils/authSession"
 
 export type MediaJobStatus = "queued" | "processing" | "done" | "failed"
 
@@ -19,19 +19,10 @@ export type MediaJobsResponse = {
   count: number
 }
 
-function authHeaders(): HeadersInit {
-  const token = localStorage.getItem("access_token") || ""
-  return { Authorization: `Bearer ${token}` }
-}
-
-function apiBase(): string {
-  return (OpenAPI.BASE || "").replace(/\/$/, "")
-}
+const fetchInit: RequestInit = { credentials: "include" }
 
 export async function listMediaJobs(): Promise<MediaJobsResponse> {
-  const response = await fetch(`${apiBase()}/api/v1/media/jobs`, {
-    headers: authHeaders(),
-  })
+  const response = await fetch(`${apiBaseUrl()}/api/v1/media/jobs`, fetchInit)
   if (!response.ok) {
     throw new Error(`List media jobs failed (${response.status})`)
   }
@@ -41,9 +32,9 @@ export async function listMediaJobs(): Promise<MediaJobsResponse> {
 export async function uploadMedia(file: File): Promise<MediaJob> {
   const body = new FormData()
   body.append("file", file)
-  const response = await fetch(`${apiBase()}/api/v1/media/upload`, {
+  const response = await fetch(`${apiBaseUrl()}/api/v1/media/upload`, {
+    ...fetchInit,
     method: "POST",
-    headers: authHeaders(),
     body,
   })
   if (!response.ok) {

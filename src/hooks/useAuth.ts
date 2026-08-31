@@ -10,11 +10,8 @@ import {
   type UserRegister,
   UsersService,
 } from "@/client"
+import { checkAuthSession, logoutSession } from "@/utils/authSession"
 import { handleError } from "@/utils"
-
-const isLoggedIn = () => {
-  return localStorage.getItem("access_token") !== null
-}
 
 const useAuth = () => {
   const [error, setError] = useState<string | null>(null)
@@ -23,7 +20,7 @@ const useAuth = () => {
   const { data: user } = useQuery<UserPublic | null, Error>({
     queryKey: ["currentUser"],
     queryFn: UsersService.readUserMe,
-    enabled: isLoggedIn(),
+    retry: false,
   })
 
   const signUpMutation = useMutation({
@@ -42,15 +39,15 @@ const useAuth = () => {
   })
 
   const login = async (data: AccessToken) => {
-    const response = await LoginService.loginAccessToken({
+    await LoginService.loginAccessToken({
       formData: data,
     })
-    localStorage.setItem("access_token", response.access_token)
   }
 
   const loginMutation = useMutation({
     mutationFn: login,
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["currentUser"] })
       navigate({ to: "/" })
     },
     onError: (err: ApiError) => {
@@ -58,8 +55,9 @@ const useAuth = () => {
     },
   })
 
-  const logout = () => {
-    localStorage.removeItem("access_token")
+  const logout = async () => {
+    await logoutSession()
+    queryClient.removeQueries({ queryKey: ["currentUser"] })
     navigate({ to: "/login" })
   }
 
@@ -73,5 +71,4 @@ const useAuth = () => {
   }
 }
 
-export { isLoggedIn }
 export default useAuth

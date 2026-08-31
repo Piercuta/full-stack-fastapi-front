@@ -1,4 +1,4 @@
-import { OpenAPI } from "@/client"
+import { apiBaseUrl } from "@/utils/authSession"
 
 export type DashboardSeriesPoint = {
   date: string
@@ -24,19 +24,10 @@ export type DashboardCacheInfo = {
   payload: DashboardStats | null
 }
 
-function authHeaders(): HeadersInit {
-  const token = localStorage.getItem("access_token") || ""
-  return { Authorization: `Bearer ${token}` }
-}
-
-function apiBase(): string {
-  return (OpenAPI.BASE || "").replace(/\/$/, "")
-}
+const fetchInit: RequestInit = { credentials: "include" }
 
 export async function fetchDashboardStats(): Promise<DashboardStats> {
-  const response = await fetch(`${apiBase()}/api/v1/dashboard/stats`, {
-    headers: authHeaders(),
-  })
+  const response = await fetch(`${apiBaseUrl()}/api/v1/dashboard/stats`, fetchInit)
   if (!response.ok) {
     throw new Error(`Dashboard stats failed (${response.status})`)
   }
@@ -44,9 +35,7 @@ export async function fetchDashboardStats(): Promise<DashboardStats> {
 }
 
 export async function fetchDashboardCache(): Promise<DashboardCacheInfo> {
-  const response = await fetch(`${apiBase()}/api/v1/dashboard/cache`, {
-    headers: authHeaders(),
-  })
+  const response = await fetch(`${apiBaseUrl()}/api/v1/dashboard/cache`, fetchInit)
   if (!response.ok) {
     throw new Error(`Dashboard cache failed (${response.status})`)
   }
@@ -54,9 +43,9 @@ export async function fetchDashboardCache(): Promise<DashboardCacheInfo> {
 }
 
 export async function invalidateDashboardCache(): Promise<{ message: string }> {
-  const response = await fetch(`${apiBase()}/api/v1/dashboard/cache`, {
+  const response = await fetch(`${apiBaseUrl()}/api/v1/dashboard/cache`, {
+    ...fetchInit,
     method: "DELETE",
-    headers: authHeaders(),
   })
   if (!response.ok) {
     throw new Error(`Invalidate cache failed (${response.status})`)

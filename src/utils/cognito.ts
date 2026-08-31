@@ -1,5 +1,7 @@
 /** Cognito Hosted UI helpers (authorization code + PKCE → app JWT via API). */
 
+import { checkAuthSession } from "@/utils/authSession"
+
 const VERIFIER_KEY = "cognito_code_verifier"
 const ERROR_KEY = "cognito_login_error"
 
@@ -106,9 +108,9 @@ export function consumeCognitoLoginError(): string | null {
   return error
 }
 
-const exchangeInFlight = new Map<string, Promise<string>>()
+const exchangeInFlight = new Map<string, Promise<void>>()
 
-export async function exchangeCognitoCode(code: string): Promise<string> {
+export async function exchangeCognitoCode(code: string): Promise<void> {
   const existing = exchangeInFlight.get(code)
   if (existing) return existing
 
@@ -117,6 +119,7 @@ export async function exchangeCognitoCode(code: string): Promise<string> {
     const base = (import.meta.env.VITE_API_URL || "").replace(/\/$/, "")
     const response = await fetch(`${base}/api/v1/login/cognito`, {
       method: "POST",
+      credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         code,
@@ -135,8 +138,6 @@ export async function exchangeCognitoCode(code: string): Promise<string> {
       throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail))
     }
     clearCodeVerifier()
-    const data = (await response.json()) as { access_token: string }
-    return data.access_token
   })().finally(() => {
     exchangeInFlight.delete(code)
   })
@@ -163,18 +164,17 @@ export async function completeCognitoLoginFromSearch(
   const handledKey = `cognito_code_handled_${code}`
   if (sessionStorage.getItem(handledKey)) {
     clearCognitoCallbackUrl()
-    return localStorage.getItem("access_token") ? "ok" : "error"
+    return (await checkAuthSession()) ? "ok" : "error"
   }
   // Mark before await to prevent a parallel beforeLoad from exchanging twice.
   sessionStorage.setItem(handledKey, "1")
 
   try {
-    const accessToken = await exchangeCognitoCode(code)
-    localStorage.setItem("access_token", accessToken)
+    await exchangeCognitoCode(code)
     clearCognitoCallbackUrl()
     return "ok"
   } catch (err) {
-    if (localStorage.getItem("access_token")) {
+    if (await checkAuthSession()) {
       clearCognitoCallbackUrl()
       return "ok"
     }

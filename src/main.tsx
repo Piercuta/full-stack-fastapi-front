@@ -11,15 +11,15 @@ import { routeTree } from "./routeTree.gen"
 
 import { ApiError, OpenAPI } from "./client"
 import { CustomProvider } from "./components/ui/provider"
+import { logoutSession } from "./utils/authSession"
 
 OpenAPI.BASE = import.meta.env.VITE_API_URL
-OpenAPI.TOKEN = async () => {
-  return localStorage.getItem("access_token") || ""
-}
+OpenAPI.WITH_CREDENTIALS = true
+OpenAPI.CREDENTIALS = "include"
 
 const handleApiError = (error: Error) => {
   if (error instanceof ApiError && [401, 403].includes(error.status)) {
-    localStorage.removeItem("access_token")
+    void logoutSession()
     window.location.href = "/login"
   }
 }

@@ -36,7 +36,7 @@ export const Route = createRootRoute({
     if (result === "ok") {
       // Hard navigation: callback lands on "/" already, so soft redirect({ to: "/" })
       // is a no-op and leaves a blank page until refresh. Full reload remounts the app
-      // with the access_token already in localStorage.
+      // with the HttpOnly auth cookie already set by the API.
       window.location.replace("/")
       return
     }
