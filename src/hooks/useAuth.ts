@@ -10,7 +10,7 @@ import {
   type UserRegister,
   UsersService,
 } from "@/client"
-import { checkAuthSession, logoutSession } from "@/utils/authSession"
+import { logoutSession } from "@/utils/authSession"
 import { handleError } from "@/utils"
 
 const useAuth = () => {
