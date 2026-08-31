@@ -1,5 +1,17 @@
 import { OpenAPI } from "@/client"
 
+/** Routes where an unauthenticated API response is expected (no redirect loop). */
+export const PUBLIC_AUTH_PATHS = [
+  "/login",
+  "/signup",
+  "/recover-password",
+  "/reset-password",
+] as const
+
+export function isPublicAuthPath(pathname: string = window.location.pathname): boolean {
+  return PUBLIC_AUTH_PATHS.some((path) => pathname.startsWith(path))
+}
+
 export function apiBaseUrl(): string {
   return (OpenAPI.BASE || import.meta.env.VITE_API_URL || "").replace(/\/$/, "")
 }

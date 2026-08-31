@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { useNavigate } from "@tanstack/react-router"
+import { useNavigate, useRouterState } from "@tanstack/react-router"
 import { useState } from "react"
 
 import {
@@ -10,17 +10,21 @@ import {
   type UserRegister,
   UsersService,
 } from "@/client"
-import { logoutSession } from "@/utils/authSession"
+import { isPublicAuthPath, logoutSession } from "@/utils/authSession"
 import { handleError } from "@/utils"
 
 const useAuth = () => {
   const [error, setError] = useState<string | null>(null)
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const pathname = useRouterState({ select: (state) => state.location.pathname })
+  const sessionQueryEnabled = !isPublicAuthPath(pathname)
+
   const { data: user } = useQuery<UserPublic | null, Error>({
     queryKey: ["currentUser"],
     queryFn: UsersService.readUserMe,
     retry: false,
+    enabled: sessionQueryEnabled,
   })
 
   const signUpMutation = useMutation({
