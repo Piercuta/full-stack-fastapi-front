@@ -31,10 +31,15 @@ export const Route = createRootRoute({
     const search =
       typeof window !== "undefined" ? window.location.search : ""
     const result = await completeCognitoLoginFromSearch(search)
+    if (result === "ok") {
+      // Fresh OAuth exchange: hard reload so TanStack Router remounts cleanly on "/"
+      // (soft navigation from /?code= leaves stale internal state → error boundary).
+      window.location.replace("/")
+      return
+    }
     if (result === "error") {
       throw redirect({ to: "/login" })
     }
-    // "ok" | "none": HttpOnly cookie is set by POST /login/cognito; continue routing.
   },
   component: () => (
     <>
