@@ -148,7 +148,7 @@ export async function exchangeCognitoCode(code: string): Promise<void> {
 
 /**
  * Run during root beforeLoad so /_layout auth redirect cannot drop ?code=.
- * Idempotent: a code is exchanged at most once (avoids invalid_grant on remount).
+ * Idempotent: parallel beforeLoad calls share one in-flight exchange (StrictMode).
  */
 export async function completeCognitoLoginFromSearch(
   search: string,
@@ -161,20 +161,6 @@ export async function completeCognitoLoginFromSearch(
   }
   if (!code) return "none"
 
-  const handledKey = `cognito_code_handled_${code}`
-  if (sessionStorage.getItem(handledKey)) {
-    const inFlight = exchangeInFlight.get(code)
-    if (inFlight) {
-      await inFlight
-    }
-    clearCognitoCallbackUrl()
-    // Return "none" (not "ok") so __root does not hard-reload in a loop when the
-    // router still has a stale ?code= in searchStr after history.replaceState.
-    return (await checkAuthSession()) ? "none" : "error"
-  }
-  // Mark before await to prevent a parallel beforeLoad from exchanging twice.
-  sessionStorage.setItem(handledKey, "1")
-
   try {
     await exchangeCognitoCode(code)
     clearCognitoCallbackUrl()
@@ -184,7 +170,6 @@ export async function completeCognitoLoginFromSearch(
       clearCognitoCallbackUrl()
       return "none"
     }
-    sessionStorage.removeItem(handledKey)
     sessionStorage.setItem(
       ERROR_KEY,
       err instanceof Error ? err.message : "Cognito login failed",
