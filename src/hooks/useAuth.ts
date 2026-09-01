@@ -24,6 +24,7 @@ const useAuth = () => {
     queryKey: ["currentUser"],
     queryFn: UsersService.readUserMe,
     retry: false,
+    staleTime: 60_000,
     enabled: sessionQueryEnabled,
   })
 

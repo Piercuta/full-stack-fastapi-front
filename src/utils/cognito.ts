@@ -163,8 +163,14 @@ export async function completeCognitoLoginFromSearch(
 
   const handledKey = `cognito_code_handled_${code}`
   if (sessionStorage.getItem(handledKey)) {
+    const inFlight = exchangeInFlight.get(code)
+    if (inFlight) {
+      await inFlight
+    }
     clearCognitoCallbackUrl()
-    return (await checkAuthSession()) ? "ok" : "error"
+    // Return "none" (not "ok") so __root does not hard-reload in a loop when the
+    // router still has a stale ?code= in searchStr after history.replaceState.
+    return (await checkAuthSession()) ? "none" : "error"
   }
   // Mark before await to prevent a parallel beforeLoad from exchanging twice.
   sessionStorage.setItem(handledKey, "1")
@@ -176,7 +182,7 @@ export async function completeCognitoLoginFromSearch(
   } catch (err) {
     if (await checkAuthSession()) {
       clearCognitoCallbackUrl()
-      return "ok"
+      return "none"
     }
     sessionStorage.removeItem(handledKey)
     sessionStorage.setItem(

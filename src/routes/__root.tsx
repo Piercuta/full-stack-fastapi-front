@@ -23,26 +23,18 @@ const TanStackDevtools =
   process.env.NODE_ENV === "production" ? () => null : React.lazy(loadDevtools)
 
 export const Route = createRootRoute({
-  beforeLoad: async ({ location }) => {
+  beforeLoad: async () => {
     // Must run before /_layout redirects unauthenticated users to /login
     // (that redirect would drop ?code= and skip the token exchange).
+    // Use window.location.search only: location.searchStr can stay stale after
+    // clearCognitoCallbackUrl() and re-trigger the OAuth handler in a loop.
     const search =
-      typeof location.searchStr === "string" && location.searchStr.length > 0
-        ? location.searchStr
-        : typeof window !== "undefined"
-          ? window.location.search
-          : ""
+      typeof window !== "undefined" ? window.location.search : ""
     const result = await completeCognitoLoginFromSearch(search)
-    if (result === "ok") {
-      // Hard navigation: callback lands on "/" already, so soft redirect({ to: "/" })
-      // is a no-op and leaves a blank page until refresh. Full reload remounts the app
-      // with the HttpOnly auth cookie already set by the API.
-      window.location.replace("/")
-      return
-    }
     if (result === "error") {
       throw redirect({ to: "/login" })
     }
+    // "ok" | "none": HttpOnly cookie is set by POST /login/cognito; continue routing.
   },
   component: () => (
     <>
