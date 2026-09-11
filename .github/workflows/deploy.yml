@@ -79,6 +79,22 @@ jobs:
           echo "VITE_API_URL=${VITE_API_URL}" >> "$GITHUB_ENV"
           echo "VITE_API_URL=${VITE_API_URL}"
 
+          COGNITO_CLIENT_ID=$(aws ssm get-parameter --name "${SSM_PREFIX}/cognito_client_id" --query Parameter.Value --output text 2>/dev/null || true)
+          COGNITO_DOMAIN=$(aws ssm get-parameter --name "${SSM_PREFIX}/cognito_domain" --query Parameter.Value --output text 2>/dev/null || true)
+          if [ -n "${COGNITO_CLIENT_ID}" ] && [ "${COGNITO_CLIENT_ID}" != "None" ]; then
+            echo "VITE_COGNITO_CLIENT_ID=${COGNITO_CLIENT_ID}" >> "$GITHUB_ENV"
+          fi
+          if [ -n "${COGNITO_DOMAIN}" ] && [ "${COGNITO_DOMAIN}" != "None" ]; then
+            case "$COGNITO_DOMAIN" in
+              http://*|https://*) ;;
+              *)
+                REGION="${AWS_REGION:-eu-west-1}"
+                COGNITO_DOMAIN="https://${COGNITO_DOMAIN}.auth.${REGION}.amazoncognito.com"
+                ;;
+            esac
+            echo "VITE_COGNITO_DOMAIN=${COGNITO_DOMAIN}" >> "$GITHUB_ENV"
+          fi
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:

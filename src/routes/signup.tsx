@@ -12,14 +12,15 @@ import { Button } from "@/components/ui/button"
 import { Field } from "@/components/ui/field"
 import { InputGroup } from "@/components/ui/input-group"
 import { PasswordInput } from "@/components/ui/password-input"
-import useAuth, { isLoggedIn } from "@/hooks/useAuth"
+import useAuth from "@/hooks/useAuth"
+import { checkAuthSession } from "@/utils/authSession"
 import { confirmPasswordRules, emailPattern, passwordRules } from "@/utils"
 import Logo from "/assets/images/fastapi-logo.svg"
 
 export const Route = createFileRoute("/signup")({
   component: SignUp,
   beforeLoad: async () => {
-    if (isLoggedIn()) {
+    if (await checkAuthSession()) {
       throw redirect({
         to: "/",
       })
