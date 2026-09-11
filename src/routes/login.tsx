@@ -4,6 +4,7 @@ import {
   createFileRoute,
   redirect,
 } from "@tanstack/react-router"
+import { useEffect, useState } from "react"
 import { type SubmitHandler, useForm } from "react-hook-form"
 import { FiLock, FiMail } from "react-icons/fi"
 
@@ -12,14 +13,20 @@ import { Button } from "@/components/ui/button"
 import { Field } from "@/components/ui/field"
 import { InputGroup } from "@/components/ui/input-group"
 import { PasswordInput } from "@/components/ui/password-input"
-import useAuth, { isLoggedIn } from "@/hooks/useAuth"
+import useAuth from "@/hooks/useAuth"
+import { checkAuthSession } from "@/utils/authSession"
+import {
+  consumeCognitoLoginError,
+  isCognitoConfigured,
+  startCognitoLogin,
+} from "@/utils/cognito"
 import Logo from "/assets/images/fastapi-logo.svg"
 import { emailPattern, passwordRules } from "../utils"
 
 export const Route = createFileRoute("/login")({
   component: Login,
   beforeLoad: async () => {
-    if (isLoggedIn()) {
+    if (await checkAuthSession()) {
       throw redirect({
         to: "/",
       })
@@ -29,6 +36,8 @@ export const Route = createFileRoute("/login")({
 
 function Login() {
   const { loginMutation, error, resetError } = useAuth()
+  const cognitoEnabled = isCognitoConfigured()
+  const [cognitoError, setCognitoError] = useState<string | null>(null)
   const {
     register,
     handleSubmit,
@@ -42,6 +51,10 @@ function Login() {
     },
   })
 
+  useEffect(() => {
+    setCognitoError(consumeCognitoLoginError())
+  }, [])
+
   const onSubmit: SubmitHandler<AccessToken> = async (data) => {
     if (isSubmitting) return
 
@@ -51,6 +64,22 @@ function Login() {
       await loginMutation.mutateAsync(data)
     } catch {
       // error is handled by useAuth hook
+    }
+  }
+
+  const onGoogleLogin = async () => {
+    try {
+      await startCognitoLogin("Google")
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  const onCognitoLogin = async () => {
+    try {
+      await startCognitoLogin()
+    } catch (err) {
+      console.error(err)
     }
   }
 
@@ -74,6 +103,11 @@ function Login() {
           alignSelf="center"
           mb={4}
         />
+        {cognitoError ? (
+          <Text color="red.500" fontSize="sm" textAlign="center">
+            {cognitoError}
+          </Text>
+        ) : null}
         <Field
           invalid={!!errors.username}
           errorText={errors.username?.message || !!error}
@@ -103,6 +137,29 @@ function Login() {
         <Button variant="solid" type="submit" loading={isSubmitting} size="md">
           Log In
         </Button>
+        {cognitoEnabled ? (
+          <>
+            <Text textAlign="center" color="fg.muted" fontSize="sm">
+              or
+            </Text>
+            <Button
+              type="button"
+              variant="outline"
+              size="md"
+              onClick={onCognitoLogin}
+            >
+              Continue with Cognito
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="md"
+              onClick={onGoogleLogin}
+            >
+              Continue with Google
+            </Button>
+          </>
+        ) : null}
         <Text>
           Don't have an account?{" "}
           <RouterLink to="/signup" className="main-link">

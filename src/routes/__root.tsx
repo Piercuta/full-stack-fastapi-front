@@ -1,7 +1,8 @@
-import { Outlet, createRootRoute } from "@tanstack/react-router"
+import { Outlet, createRootRoute, redirect } from "@tanstack/react-router"
 import React, { Suspense } from "react"
 
 import NotFound from "@/components/Common/NotFound"
+import { completeCognitoLoginFromSearch } from "@/utils/cognito"
 
 const loadDevtools = () =>
   Promise.all([
@@ -22,6 +23,24 @@ const TanStackDevtools =
   process.env.NODE_ENV === "production" ? () => null : React.lazy(loadDevtools)
 
 export const Route = createRootRoute({
+  beforeLoad: async () => {
+    // Must run before /_layout redirects unauthenticated users to /login
+    // (that redirect would drop ?code= and skip the token exchange).
+    // Use window.location.search only: location.searchStr can stay stale after
+    // clearCognitoCallbackUrl() and re-trigger the OAuth handler in a loop.
+    const search =
+      typeof window !== "undefined" ? window.location.search : ""
+    const result = await completeCognitoLoginFromSearch(search)
+    if (result === "ok") {
+      // Fresh OAuth exchange: hard reload so TanStack Router remounts cleanly on "/"
+      // (soft navigation from /?code= leaves stale internal state → error boundary).
+      window.location.replace("/")
+      return
+    }
+    if (result === "error") {
+      throw redirect({ to: "/login" })
+    }
+  },
   component: () => (
     <>
       <Outlet />
